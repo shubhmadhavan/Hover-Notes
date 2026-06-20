@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Hover Notes
 // @namespace    http://tampermonkey.net/
-// @version      1.0
-// @description  Slide-in notes panel, appears on hover, disappears by itself
+// @version      1.1
+// @description  Slide-in markdown notes panel with persistence
 // @match        *://*/*
 // @grant        GM_registerMenuCommand
 // @grant        GM_download
@@ -76,10 +76,10 @@
         position: fixed;
         left: 0;
         bottom: 0;
-        width: 20vw;
-        min-width: 100px;
-        height: 220px;
-        max-height: 40vh;
+        width: 25vw;
+        min-width: 130px;
+        height: 260px;
+        max-height: 50vh;
         z-index: 2147483647;
 
         box-sizing: border-box;
@@ -132,7 +132,7 @@
 
         setTimeout(() => {
             URL.revokeObjectURL(a.href);
-        }, 1000);
+        }, 800);
     });
 
     let focused = false;
@@ -160,7 +160,7 @@
             });
         }
 
-        note.style.opacity = '0.84';
+        note.style.opacity = '0.92';
         note.style.pointerEvents = 'auto';
     }
 
@@ -183,7 +183,7 @@
             if (!focused) {
                 hidePanel();
             }
-        }, 1400);
+        }, 800);
     }
 
     triggerLeft.addEventListener('mouseenter', () => {
@@ -213,8 +213,6 @@
             scheduleHide();
         }
     });
-
-
 
 
     note.addEventListener('input', () => {
