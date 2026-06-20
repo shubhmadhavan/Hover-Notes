@@ -43,11 +43,22 @@
         );
     }
 
-    const trigger = document.createElement('div');
+    const triggerLeft = document.createElement('div');
+    const triggerRight = document.createElement('div');
 
-    trigger.style.cssText = `
+    triggerLeft.style.cssText = `
         position: fixed;
         left: 0;
+        bottom: 0;
+        width: 120px;
+        height: 120px;
+        z-index: 2147483647;
+        background: transparent;
+    `;
+
+    triggerRight.style.cssText = `
+        position: fixed;
+        right: 0;
         bottom: 0;
         width: 120px;
         height: 120px;
@@ -59,7 +70,7 @@
 
     note.value = loadNotes();
 
-    note.placeholder = ` - start typing...`;
+    note.placeholder = `Start typing...`;
 
     note.style.cssText = `
         position: fixed;
@@ -81,55 +92,84 @@
         line-height: 1.4;
 
         background: #F7E6CA;
-
         color: #654321;
+
         border: 1px solid rgba(255,255,255,.2);
         border-radius: 8px 8px 0 0;
 
         transform: translateX(-100%);
         opacity: 0;
         pointer-events: none;
+
         transition: transform .25s ease, opacity .25s ease;
     `;
 
-GM_registerMenuCommand('Export Notes (.md)', () => {
-    const date = new Date().toISOString().slice(0, 10);
+    GM_registerMenuCommand('Export Notes (.md)', () => {
+        const date = new Date().toISOString().slice(0, 10);
 
-    const safeTitle = document.title
-        .trim()
-        .replace(/[<>:"/\\|?*\x00-\x1F]/g, '')
-        .replace(/\s+/g, ' ')
-        .slice(0, 120);
+        const safeTitle = document.title
+            .trim()
+            .replace(/[<>:"/\\|?*\x00-\x1F]/g, '')
+            .replace(/\s+/g, ' ')
+            .slice(0, 120);
 
-    const filename = `${date} - ${safeTitle || 'Untitled'}.md`;
+        const filename =
+            `${date} - ${safeTitle || 'Untitled'}.md`;
 
-    const blob = new Blob([note.value], {
-        type: 'text/markdown;charset=utf-8'
+        const blob = new Blob(
+            [note.value],
+            { type: 'text/markdown;charset=utf-8' }
+        );
+
+        const a = document.createElement('a');
+
+        a.href = URL.createObjectURL(blob);
+        a.download = filename;
+
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+
+        setTimeout(() => {
+            URL.revokeObjectURL(a.href);
+        }, 1000);
     });
-
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = filename;
-
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-
-    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
-});
 
     let focused = false;
     let hideTimer = null;
+    let panelSide = 'left';
 
     function showPanel() {
         clearTimeout(hideTimer);
-        note.style.transform = 'translateX(0)';
+
+        if (panelSide === 'right') {
+            note.style.left = 'auto';
+            note.style.right = '0';
+            note.style.transform = 'translateX(100%)';
+
+            requestAnimationFrame(() => {
+                note.style.transform = 'translateX(0)';
+            });
+        } else {
+            note.style.right = 'auto';
+            note.style.left = '0';
+            note.style.transform = 'translateX(-100%)';
+
+            requestAnimationFrame(() => {
+                note.style.transform = 'translateX(0)';
+            });
+        }
+
         note.style.opacity = '0.84';
         note.style.pointerEvents = 'auto';
     }
 
     function hidePanel() {
-        note.style.transform = 'translateX(-100%)';
+        note.style.transform =
+            panelSide === 'right'
+                ? 'translateX(100%)'
+                : 'translateX(-100%)';
+
         note.style.opacity = '0';
         note.style.pointerEvents = 'none';
     }
@@ -146,7 +186,16 @@ GM_registerMenuCommand('Export Notes (.md)', () => {
         }, 1400);
     }
 
-    trigger.addEventListener('mouseenter', showPanel);
+    triggerLeft.addEventListener('mouseenter', () => {
+        panelSide = 'left';
+        showPanel();
+    });
+
+    triggerRight.addEventListener('mouseenter', () => {
+        panelSide = 'right';
+        showPanel();
+    });
+
     note.addEventListener('mouseenter', showPanel);
 
     note.addEventListener('focus', () => {
@@ -165,104 +214,28 @@ GM_registerMenuCommand('Export Notes (.md)', () => {
         }
     });
 
-    note.addEventListener('beforeinput', (e) => {
-        if (
-            e.inputType !== 'insertText' ||
-            !e.data ||
-            e.data.length !== 1
-        ) {
-            return;
-        }
 
-        const start = note.selectionStart;
-        const end = note.selectionEnd;
 
-        if (start !== end) return;
-
-        const value = note.value;
-
-        const lineStart =
-            value.lastIndexOf('\n', start - 1) + 1;
-
-        const currentLine =
-            value.slice(lineStart, start);
-
-        if (currentLine.length === 0) {
-            e.preventDefault();
-
-            note.setRangeText(
-                ` - ${e.data}`,
-                start,
-                end,
-                'end'
-            );
-
-            saveNotes(note.value);
-        }
-    });
-
-    note.addEventListener('keydown', (e) => {
-        if (e.key !== 'Enter') return;
-
-        e.preventDefault();
-
-        const start = note.selectionStart;
-        const end = note.selectionEnd;
-
-        const value = note.value;
-
-        const lineStart =
-            value.lastIndexOf('\n', start - 1) + 1;
-
-        const lineEndIndex =
-            value.indexOf('\n', start);
-
-        const lineEnd =
-            lineEndIndex === -1
-                ? value.length
-                : lineEndIndex;
-
-        const line =
-            value.slice(lineStart, lineEnd);
-
-        if (line === ' - ') {
-            note.setRangeText(
-                '',
-                lineStart,
-                lineEnd,
-                'start'
-            );
-
-            note.setRangeText(
-                '\n',
-                lineStart,
-                lineStart,
-                'end'
-            );
-
-            saveNotes(note.value);
-            return;
-        }
-
-        const insertText =
-            line.startsWith(' - ')
-                ? '\n - '
-                : '\n';
-
-        note.setRangeText(
-            insertText,
-            start,
-            end,
-            'end'
-        );
-
-        saveNotes(note.value);
-    });
 
     note.addEventListener('input', () => {
         saveNotes(note.value);
     });
 
-    document.documentElement.appendChild(trigger);
+const protectedEvents = [
+    'copy',
+    'cut',
+    'paste',
+    'selectstart',
+    'contextmenu',
+    'keydown'
+];
+
+for (const type of protectedEvents) {
+    note.addEventListener(type, (e) => {
+        e.stopPropagation();
+    }, true);
+}
+    document.documentElement.appendChild(triggerLeft);
+    document.documentElement.appendChild(triggerRight);
     document.documentElement.appendChild(note);
 })();
