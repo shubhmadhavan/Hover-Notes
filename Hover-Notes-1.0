@@ -1,0 +1,268 @@
+// ==UserScript==
+// @name         Hover Notes
+// @namespace    http://tampermonkey.net/
+// @version      1.0
+// @description  Slide-in notes panel, appears on hover, disappears by itself
+// @match        *://*/*
+// @grant        GM_registerMenuCommand
+// @grant        GM_download
+// @author       Shubh Madhavan
+// ==/UserScript==
+
+(function () {
+    'use strict';
+
+    const STORAGE_KEY = '__hover_notes_data__';
+    const EXPIRY_MS = 2 * 24 * 60 * 60 * 1000; // 2 days
+
+    function loadNotes() {
+        try {
+            const raw = localStorage.getItem(STORAGE_KEY);
+            if (!raw) return '';
+
+            const data = JSON.parse(raw);
+
+            if (!data.timestamp || Date.now() - data.timestamp > EXPIRY_MS) {
+                localStorage.removeItem(STORAGE_KEY);
+                return '';
+            }
+
+            return data.text || '';
+        } catch {
+            return '';
+        }
+    }
+
+    function saveNotes(text) {
+        localStorage.setItem(
+            STORAGE_KEY,
+            JSON.stringify({
+                text,
+                timestamp: Date.now()
+            })
+        );
+    }
+
+    const trigger = document.createElement('div');
+
+    trigger.style.cssText = `
+        position: fixed;
+        left: 0;
+        bottom: 0;
+        width: 120px;
+        height: 120px;
+        z-index: 2147483647;
+        background: transparent;
+    `;
+
+    const note = document.createElement('textarea');
+
+    note.value = loadNotes();
+
+    note.placeholder = ` - start typing...`;
+
+    note.style.cssText = `
+        position: fixed;
+        left: 0;
+        bottom: 0;
+        width: 20vw;
+        min-width: 100px;
+        height: 220px;
+        max-height: 40vh;
+        z-index: 2147483647;
+
+        box-sizing: border-box;
+        padding: 10px;
+
+        resize: vertical;
+
+        font-family: monospace;
+        font-size: 13px;
+        line-height: 1.4;
+
+        background: #F7E6CA;
+
+        color: #654321;
+        border: 1px solid rgba(255,255,255,.2);
+        border-radius: 8px 8px 0 0;
+
+        transform: translateX(-100%);
+        opacity: 0;
+        pointer-events: none;
+        transition: transform .25s ease, opacity .25s ease;
+    `;
+
+GM_registerMenuCommand('Export Notes (.md)', () => {
+    const date = new Date().toISOString().slice(0, 10);
+
+    const safeTitle = document.title
+        .trim()
+        .replace(/[<>:"/\\|?*\x00-\x1F]/g, '')
+        .replace(/\s+/g, ' ')
+        .slice(0, 120);
+
+    const filename = `${date} - ${safeTitle || 'Untitled'}.md`;
+
+    const blob = new Blob([note.value], {
+        type: 'text/markdown;charset=utf-8'
+    });
+
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+});
+
+    let focused = false;
+    let hideTimer = null;
+
+    function showPanel() {
+        clearTimeout(hideTimer);
+        note.style.transform = 'translateX(0)';
+        note.style.opacity = '0.84';
+        note.style.pointerEvents = 'auto';
+    }
+
+    function hidePanel() {
+        note.style.transform = 'translateX(-100%)';
+        note.style.opacity = '0';
+        note.style.pointerEvents = 'none';
+    }
+
+    function scheduleHide() {
+        clearTimeout(hideTimer);
+
+        if (focused) return;
+
+        hideTimer = setTimeout(() => {
+            if (!focused) {
+                hidePanel();
+            }
+        }, 1400);
+    }
+
+    trigger.addEventListener('mouseenter', showPanel);
+    note.addEventListener('mouseenter', showPanel);
+
+    note.addEventListener('focus', () => {
+        focused = true;
+        showPanel();
+    });
+
+    note.addEventListener('blur', () => {
+        focused = false;
+        scheduleHide();
+    });
+
+    note.addEventListener('mouseleave', () => {
+        if (!focused) {
+            scheduleHide();
+        }
+    });
+
+    note.addEventListener('beforeinput', (e) => {
+        if (
+            e.inputType !== 'insertText' ||
+            !e.data ||
+            e.data.length !== 1
+        ) {
+            return;
+        }
+
+        const start = note.selectionStart;
+        const end = note.selectionEnd;
+
+        if (start !== end) return;
+
+        const value = note.value;
+
+        const lineStart =
+            value.lastIndexOf('\n', start - 1) + 1;
+
+        const currentLine =
+            value.slice(lineStart, start);
+
+        if (currentLine.length === 0) {
+            e.preventDefault();
+
+            note.setRangeText(
+                ` - ${e.data}`,
+                start,
+                end,
+                'end'
+            );
+
+            saveNotes(note.value);
+        }
+    });
+
+    note.addEventListener('keydown', (e) => {
+        if (e.key !== 'Enter') return;
+
+        e.preventDefault();
+
+        const start = note.selectionStart;
+        const end = note.selectionEnd;
+
+        const value = note.value;
+
+        const lineStart =
+            value.lastIndexOf('\n', start - 1) + 1;
+
+        const lineEndIndex =
+            value.indexOf('\n', start);
+
+        const lineEnd =
+            lineEndIndex === -1
+                ? value.length
+                : lineEndIndex;
+
+        const line =
+            value.slice(lineStart, lineEnd);
+
+        if (line === ' - ') {
+            note.setRangeText(
+                '',
+                lineStart,
+                lineEnd,
+                'start'
+            );
+
+            note.setRangeText(
+                '\n',
+                lineStart,
+                lineStart,
+                'end'
+            );
+
+            saveNotes(note.value);
+            return;
+        }
+
+        const insertText =
+            line.startsWith(' - ')
+                ? '\n - '
+                : '\n';
+
+        note.setRangeText(
+            insertText,
+            start,
+            end,
+            'end'
+        );
+
+        saveNotes(note.value);
+    });
+
+    note.addEventListener('input', () => {
+        saveNotes(note.value);
+    });
+
+    document.documentElement.appendChild(trigger);
+    document.documentElement.appendChild(note);
+})();
